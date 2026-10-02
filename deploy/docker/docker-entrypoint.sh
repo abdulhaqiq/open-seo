@@ -38,10 +38,4 @@ else
   printf '%s' "$FINGERPRINT" > "$FP_FILE"
 fi
 
-if [ -n "${BASIC_AUTH_PASSWORD:-}" ]; then
-  export OPENSEO_INTERNAL_PORT="${OPENSEO_INTERNAL_PORT:-3001}"
-  pnpm exec vite preview --host 127.0.0.1 --port "$OPENSEO_INTERNAL_PORT" &
-  exec node deploy/docker/basic-auth-proxy.mjs
-fi
-
 exec pnpm exec vite preview --host 0.0.0.0 --port "${PORT:-3001}"

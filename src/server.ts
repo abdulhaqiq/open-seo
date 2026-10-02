@@ -29,6 +29,56 @@ import { handleGdprStorageErasure } from "@/server/gdpr/storage-erasure";
 import { GDPR_STORAGE_ERASURE_PATH } from "@/shared/gdpr-erasure";
 
 const startHandler = createStartHandler(defaultStreamHandler);
+const credentialEncoder = new TextEncoder();
+
+async function credentialsMatch(candidate: string, expected: string) {
+  const [candidateHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", credentialEncoder.encode(candidate)),
+    crypto.subtle.digest("SHA-256", credentialEncoder.encode(expected)),
+  ]);
+  const candidateBytes = new Uint8Array(candidateHash);
+  const expectedBytes = new Uint8Array(expectedHash);
+  let difference = 0;
+  for (let index = 0; index < expectedBytes.length; index += 1) {
+    difference |= candidateBytes[index] ^ expectedBytes[index];
+  }
+  return difference === 0;
+}
+
+async function deploymentBasicAuth(
+  request: Request,
+  env: Env,
+): Promise<Response | undefined> {
+  const password = env.BASIC_AUTH_PASSWORD?.trim();
+  if (!password) return undefined;
+  if (password.length < 16) {
+    return new Response("Deployment authentication is misconfigured", {
+      status: 503,
+    });
+  }
+
+  const header = request.headers.get("authorization") ?? "";
+  if (header.startsWith("Basic ")) {
+    try {
+      const supplied = atob(header.slice(6));
+      const username = env.BASIC_AUTH_USERNAME?.trim() || "darwa";
+      if (await credentialsMatch(supplied, `${username}:${password}`)) {
+        return undefined;
+      }
+    } catch {
+      // Invalid base64 is handled by the challenge below.
+    }
+  }
+
+  return new Response("Authentication required", {
+    status: 401,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "text/plain; charset=utf-8",
+      "WWW-Authenticate": 'Basic realm="Darwa OpenSEO", charset="UTF-8"',
+    },
+  });
+}
 
 // The app ships no security response headers of its own, so any third-party
 // page can frame an app route and UI-redress a one-click action (delete a
@@ -135,15 +185,20 @@ function fetch(
   return withPgClient(() => Promise.resolve(handleFetch(request, env, ctx)));
 }
 
-function handleFetch(
+async function handleFetch(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
-): Response | Promise<Response> {
+): Promise<Response> {
   const authMode = getAuthMode(env.AUTH_MODE);
   const publicRequest = requestWithPublicOrigin(request);
   const pathname = new URL(publicRequest.url).pathname;
   ctx.waitUntil(maybeSendSelfHostHeartbeat(pathname));
+
+  if (pathname !== "/api/health") {
+    const authResponse = await deploymentBasicAuth(publicRequest, env);
+    if (authResponse) return authResponse;
+  }
 
   if (pathname === GDPR_STORAGE_ERASURE_PATH) {
     return handleGdprStorageErasure(publicRequest, env);

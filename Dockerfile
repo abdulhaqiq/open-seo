@@ -6,7 +6,8 @@ ENV AUTH_MODE=local_noauth
 ENV VITE_SHOW_DEVTOOLS=false
 
 COPY deploy/docker/docker-entrypoint.sh deploy/docker/docker-entrypoint.sh
-COPY deploy/docker/basic-auth-proxy.mjs deploy/docker/basic-auth-proxy.mjs
+COPY src/server.ts src/server.ts
+COPY src/env.d.ts src/env.d.ts
 
 RUN pnpm run db:migrate:local \
     && pnpm run build \
@@ -14,9 +15,9 @@ RUN pnpm run db:migrate:local \
     && test -n "$fingerprint" \
     && printf '%s' "$fingerprint" > dist/.openseo-build-env
 
-# Keep the two small runtime Node processes within Render Free's 512 MB cap.
+# Keep the runtime Node process within Render Free's 512 MB cap.
 # The heavier compilation and initial D1 migration already happened above.
-ENV NODE_OPTIONS=--max-old-space-size=192
+ENV NODE_OPTIONS=--max-old-space-size=128
 ENV OPENSEO_SKIP_RUNTIME_MIGRATIONS=1
 
 CMD ["sh", "deploy/docker/docker-entrypoint.sh"]
