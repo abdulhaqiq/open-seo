@@ -13,7 +13,9 @@ echo 'OpenSEO sends an anonymous usage heartbeat (counts only). Disable: OPENSEO
 # in seconds with the exact fix instead of after a multi-minute build.
 pnpm exec tsx scripts/selfhost-preflight.ts
 
-pnpm run db:migrate:local
+if [ "${OPENSEO_SKIP_RUNTIME_MIGRATIONS:-}" != "1" ]; then
+  pnpm run db:migrate:local
+fi
 
 # POSTHOG_SOURCEMAPS (CI sourcemap uploads) moves vite's outDir; keep the
 # fingerprint marker beside the output it describes.
